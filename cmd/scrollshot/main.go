@@ -28,6 +28,10 @@ import (
 	"scrollshot/internal/stitch"
 )
 
+// version is set at build time via -ldflags "-X main.version=..." (see
+// .github/workflows/release.yml). Defaults to "dev" for local builds.
+var version = "dev"
+
 func timestamp() string {
 	return time.Now().Format("20060102_150405")
 }
@@ -184,7 +188,7 @@ func notify(path string) {
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Println("Usage: scrollshot [capture|finish]")
+		fmt.Println("Usage: scrollshot [capture|finish|version]")
 		os.Exit(1)
 	}
 	switch os.Args[1] {
@@ -192,8 +196,10 @@ func main() {
 		cmdCapture()
 	case "finish":
 		cmdFinish()
+	case "version", "--version", "-v":
+		fmt.Println("scrollshot", version)
 	default:
-		fmt.Println("Usage: scrollshot [capture|finish]")
+		fmt.Println("Usage: scrollshot [capture|finish|version]")
 		os.Exit(1)
 	}
 }
