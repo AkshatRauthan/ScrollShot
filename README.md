@@ -1,89 +1,102 @@
 # Scrollshot
 
-**Native scrolling screenshots for Linux — built because nothing else worked.**
+**Native scrolling screenshots — built because nothing else worked on GNOME Wayland, and grown into a cross-platform tool from there.**
 
-Scrollshot captures long, scrollable content — web pages, design canvases, code editors, chat logs, documentation — as a single continuous image, without relying on `wlr-layer-shell`-based tools (`grim`, `slurp`) that silently fail on GNOME/Mutter and other non-wlroots Wayland compositors.
-
-It exists because every existing scrolling-screenshot tool on Linux assumes a compositor protocol that GNOME deliberately doesn't implement. Scrollshot works around that by capturing through the desktop's own native screenshot mechanism instead, then stitching frames together with a pixel-overlap matching engine — no compositor cooperation required beyond what already works.
+Scrollshot captures long, scrollable content — web pages, design canvases, code editors, chat logs, documentation — as a single continuous image. It started as a fix for a real, specific gap: every existing scrolling-screenshot tool on Linux assumes a Wayland compositor protocol (`wlr-layer-shell`) that GNOME's Mutter deliberately doesn't implement, so `grim`/`slurp`/every tool built on them simply fails there with no clean fallback.
 
 ---
 
 ## Why this matters
 
 ### For agentic coding
-AI coding agents increasingly need to *see* what they're building — a rendered web app, a long settings page, a multi-screen user flow, a scrolling terminal log. A single viewport screenshot only shows a fraction of the actual UI state. Scrollshot gives an agent (or the human directing one) a complete, continuous view of a page or window in one image — critical for visual QA loops, regression comparison, and grounding an agent's understanding of what it actually shipped, instead of guessing from a cropped viewport.
+AI coding agents increasingly need to *see* what they're building — a rendered web app, a long settings page, a multi-screen user flow. A single viewport screenshot only shows a fraction of the actual UI state. Scrollshot gives an agent (or the human directing one) a complete, continuous view of a page or window in one image — useful for visual QA loops, regression comparison, and grounding an agent's understanding of what it actually shipped.
 
 ### For UI/UX design
-Full-page mockups, design systems, and long user flows are painful to document with viewport-limited tools. Scrollshot captures an entire scrollable canvas — a Figma board, a live prototype, a full page of components — in one clean image, ready to drop into a spec doc, a handoff file, or a design review without stitching screenshots by hand.
+Full-page mockups, design systems, and long user flows are painful to document with viewport-limited tools. Scrollshot captures an entire scrollable canvas in one clean image, ready to drop into a spec doc or design review without manually stitching screenshots.
 
 ### For everything else
-- **QA & bug reports** — capture an entire failing page state, not just what fit on screen
-- **Documentation & tutorials** — full-page reference captures without seams
-- **Code review** — long files, long diffs, long terminal output, captured whole
-- **Research & archiving** — long articles, threads, and chat logs preserved completely
-- **Support & compliance** — full-context evidence capture in one artifact instead of a stitched-together folder of overlapping crops
+QA and bug reports, documentation, code review of long files/diffs, research and archiving, support and compliance evidence — anywhere "the whole thing in one image" beats a stitched-together folder of overlapping crops.
 
 ---
 
 ## How it works
 
-1. **Capture** — each keypress (or command) grabs the currently focused window via the desktop's own screenshot mechanism (currently `gnome-screenshot`, which talks to GNOME Shell directly — no wlroots protocol dependency).
+1. **Capture** — each keypress (or command) grabs the currently focused window through whatever mechanism actually works on your OS/desktop. See [`docs/capturing.md`](docs/capturing.md) for exactly how each platform is handled.
 2. **Stack frames** — you scroll a bit between captures; each frame naturally overlaps the previous one.
-3. **Stitch** — a pixel-overlap search finds exactly where consecutive frames match, trims the duplicate region, and glues them into one continuous image. No manual alignment, no visible seams.
-4. **Save** — the finished image lands in `~/Pictures/Screenshots/`, ready to use.
+3. **Stitch** — a calibrated matching engine finds exactly where consecutive frames overlap, detects and strips fixed UI (sticky navs, status bars) that shouldn't repeat, and glues everything into one continuous image with no visible seams. Full detail in [`docs/stitching.md`](docs/stitching.md).
+4. **Save** — the finished image lands in your Pictures/Screenshots folder, ready to use.
 
-Verified on real-world captures up to 23 frames at 2.8K resolution with zero visible seams.
+Verified against real captures up to 23 frames at 2.8K resolution, and against real reported bugs on both a marketing web page and VS Code's dark editor — see [`CHANGELOG.md`](CHANGELOG.md) for the specifics.
 
 ---
 
-## Status
+## Platform support
 
-Currently working on **Linux, GNOME, Wayland** — the hardest environment to support, tackled first since it's the one every other tool gives up on.
+| Platform | Backend | Status |
+|---|---|---|
+| GNOME (Wayland or X11) | `gnome-screenshot` | ✅ Working |
+| Any portal-compliant desktop (GNOME, KDE) | D-Bus `xdg-desktop-portal` | ✅ Working |
+| Any X11 desktop | Pure-Go X11 protocol | ✅ Working |
+| Windows (amd64, arm64) | Raw Win32 syscalls | ✅ Working |
+| macOS | — | 🚧 Not yet built |
+| Wayland compositors without `xdg-desktop-portal-*` installed (bare Sway/Hyprland) | — | ⚠️ Known gap |
 
-Built in Go with a deliberately modular architecture so new platforms and features are additive, not rewrites:
+**In plain terms, if you're running:**
+
+| OS | Status | Comments |
+|---|---|---|
+| Ubuntu, Fedora Workstation, Debian (GNOME), Pop!_OS | ✅ Works out of the box | Uses the GNOME backend |
+| Kubuntu, KDE neon, openSUSE (KDE Plasma) | ✅ Works out of the box | Uses the D-Bus portal backend |
+| Arch/Manjaro with GNOME or KDE Plasma | ✅ Works out of the box | Same as above, whichever desktop applies |
+| Xfce, i3, or any distro running an X11 session | ✅ Works out of the box | Uses the pure-Go X11 backend |
+| Sway, Hyprland (or other wlroots compositors) | ⚠️ Conditional | Needs `xdg-desktop-portal-wlr` (or equivalent) installed — not there by default on every distro; see [`docs/known-limitations.md`](docs/known-limitations.md) |
+| Windows 10/11 (amd64 or arm64) | ✅ Works out of the box | Uses raw Win32 syscalls |
+| macOS (Intel or Apple Silicon) | 🚧 Not supported yet | No backend built yet |
+
+Not sure which category your setup falls into? Just run `scrollshot capture` — it auto-detects and tells you plainly if nothing works for your environment.
+
+The right backend is selected automatically at runtime — see [`docs/capturing.md`](docs/capturing.md) for how.
+
+---
+
+## Architecture
 
 ```
 scrollshot/
-├── cmd/scrollshot/         CLI entrypoint
+├── cmd/scrollshot/       CLI entrypoint
 └── internal/
-    ├── capture/            pluggable screenshot backends (per OS/compositor)
+    ├── capture/           pluggable screenshot backends, one per OS/protocol
     ├── session/            frame staging between capture and finish
-    ├── stitch/             the overlap-detection stitching engine
+    ├── stitch/             the matching + stitching engine
     ├── edit/               [planned] crop / reorder frames
-    ├── export/             [planned] lossless & lossy size control
+    ├── export/              [planned] lossless & lossy size control
     └── autoscroll/         [planned] driven scrolling + end-of-page detection
 ```
 
-Each capture backend is just an implementation of a small `Capturer` interface — adding a new platform never touches the stitching logic, the CLI, or any other backend.
+See [`docs/architecture.md`](docs/architecture.md) for the reasoning behind this shape, and [`CONTRIBUTING.md`](CONTRIBUTING.md) if you want to add a backend or feature yourself.
 
 ---
 
 ## Roadmap
 
-**Cross-platform support** is the near-term priority — not just Ubuntu/GNOME, but Linux broadly and beyond:
+- **macOS backend** — deferred, next up when picked back up
+- **Wayland fallback backend** (`grim`/`slurp`) for wlroots compositors without a portal installed
+- **Autoscroll + auto-capture** — drive scrolling automatically and capture continuously until the end of the page
+- **Frame cropping & reordering** — manual controls on top of the automatic fixed-UI detection already in place
+- **Lossless & lossy export control** — tighter compression or scaled-down output when file size matters more than pixel-perfect fidelity
 
-- **Wayland, any desktop** — a direct `org.freedesktop.portal.Screenshot` D-Bus client, removing the GNOME-only / `gnome-screenshot`-installed dependency and extending native support to KDE and other portal-compliant desktops
-- **X11** — any Linux distro on X11, via native capture, no external binary dependency
-- **macOS** — native capture via CoreGraphics
-- **Windows** — native capture with active-window targeting and DPI-awareness handling
-- **Automatic backend detection** — the right capture method picked at runtime, no manual configuration
+## Known limitations
 
-**Planned features:**
-- **Autoscroll + auto-capture** — drive the scrolling automatically and capture continuously until the end of the page or a manual stop, instead of manual scroll-and-tap
-- **Frame cropping** — trim sticky headers/nav bars that get recaptured in every frame before stitching
-- **Frame reordering** — fix a session captured out of sequence before it's stitched
-- **Lossless & lossy export control** — tighter compression for exact-pixel needs, or scaled-down/re-encoded output when file size matters more than fidelity
-
----
+A few edge cases don't have clean answers yet — see [`docs/known-limitations.md`](docs/known-limitations.md) for the honest list rather than pretending they don't exist.
 
 ## Community
 
-This started as a fix for a problem GNOME Wayland users have been hitting for years with no clean answer. If it's useful to you too:
+This started as a fix for a problem GNOME Wayland users have been hitting for years with no clean answer, and grew from there.
 
-- **Try it, break it, file an issue** — especially on desktop environments and distros beyond GNOME/Ubuntu; real-world edge cases are how the capture backends and overlap matching get more robust
-- **Contribute a backend** — the `Capturer` interface is small and self-contained; a KDE, X11, macOS, or Windows backend is a well-scoped, independent contribution
-- **Share how you're using it** — agentic workflows, design handoffs, QA pipelines, anything — it shapes what gets prioritized next
+- **Try it, break it, file an issue** — especially on desktop environments and distros beyond what's already been tested
+- **Contribute a backend or feature** — see [`CONTRIBUTING.md`](CONTRIBUTING.md); the `Capturer` interface is small and self-contained, and a new backend never requires touching existing code
+- **Share how you're using it** — shapes what gets prioritized next
 
-No roadmap here is fixed in stone. If a platform or feature above matters to your workflow, say so — that's exactly the kind of signal that reorders priorities.
+## License
 
----
+MIT — see [`LICENSE`](LICENSE).

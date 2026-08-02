@@ -1,0 +1,69 @@
+# Architecture
+
+This document explains *why* the codebase is shaped the way it is, not just what's in each file — the folder listing alone doesn't tell you much.
+
+## The shape
+
+```
+scrollshot/
+├── cmd/scrollshot/main.go       CLI entrypoint — thin, does almost nothing itself
+└── internal/
+    ├── capture/                  "how do I grab a screenshot" — OS/protocol-specific
+    ├── session/                  "where do captured frames live between commands"
+    ├── stitch/                   "how do I glue frames together" — pure image logic
+    ├── edit/                     "adjust frames before/after stitching" — planned
+    ├── export/                   "control output file size" — planned
+    └── autoscroll/               "drive the scrolling itself" — planned
+```
+
+Each package answers exactly one question. That's the organizing principle, and it's worth understanding because it's what makes the rest of the design decisions below make sense.
+
+## `cmd/scrollshot/main.go` — deliberately thin
+
+`main.go` only does argument parsing and wiring: it calls into `capture`, `session`, and `stitch`, and prints their results. It contains no business logic of its own. This isn't an aesthetic preference — it means every package underneath is independently testable and reusable without a CLI attached, and it means `main.go` almost never needs to change when a package's internals change. Compare the git history: `stitch.go` has been rewritten several times chasing real bugs; `main.go`'s call sites have barely moved.
+
+## `internal/capture` — the interface-first package
+
+This is the package most worth understanding if you're extending the project, because it demonstrates the pattern the whole codebase leans on.
+
+```go
+type Capturer interface {
+    Name() string
+    Available() bool
+    CaptureActiveWindow() (image.Image, error)
+}
+```
+
+Every backend (`gnome.go`, `portal.go`, `x11.go`, `windows.go`) implements this interface and registers itself in its own `init()`:
+
+```go
+func init() {
+    Register(&x11Screenshot{})
+}
+```
+
+Nothing else — not `main.go`, not the other backends, not the registry itself — needs to know a new backend exists. `capture.Detect()` walks whatever's registered and returns the first one whose `Available()` reports true. There is no `switch runtime.GOOS` anywhere in this codebase; platform dispatch happens entirely through Go build tags (`//go:build linux`, `//go:build windows`) plus this runtime availability check, which is why adding macOS support later will mean adding one new file, not touching four existing ones.
+
+This also means a backend's `Available()` check is doing real work, not a formality — see `x11.go`'s two-layer check (session-type environment variable, then an actual connection attempt) for the expected level of care. A backend that claims availability incorrectly produces a confusing runtime failure instead of a clean "not available here, trying the next one."
+
+## `internal/session` — deliberately separated from `main.go`
+
+Session management (where frames get staged, stale-session auto-clearing) used to live directly in `main.go`. It was extracted into its own package specifically so the storage logic could be tested and reasoned about independently of CLI concerns — and because "where do frames live" is a genuinely different question from "what does the `capture` command do," even though early on they were the same function.
+
+## `internal/stitch` — pure, and that's load-bearing
+
+The stitching engine takes `image.RGBA` in and produces `image.RGBA` out. It has no knowledge of files, sessions, or capture backends. This isn't just clean separation for its own sake — it's what made the extensive testing this package has been through possible at all. Every fix documented in `CHANGELOG.md` started with a small Go program generating synthetic test frames with a known, exact expected outcome, feeding them directly into `stitch.Stitch()`, and checking the output — no session directories, no real screenshots, no capture backend needed. See [`docs/stitching.md`](stitching.md) for the algorithm itself.
+
+## `internal/edit`, `internal/export`, `internal/autoscroll` — interfaces before implementations
+
+These three packages exist today as real Go interfaces and function signatures with `ErrNotImplemented` bodies, not as empty folders or TODO comments. That's deliberate: the contract each will expose to the rest of the codebase was decided and locked in ahead of time, so when one gets built, it's filling in a function body — not renegotiating how `main.go` or `session` will call it. `autoscroll` in particular mirrors `capture`'s per-backend registry pattern on purpose, since driving scroll input is just as OS/compositor-restricted as taking a screenshot is (see `autoscroll.go`'s doc comment for the reasoning).
+
+## Why build tags instead of runtime OS checks everywhere
+
+Every OS-specific file starts with a build constraint:
+
+```go
+//go:build windows
+```
+
+This means a Linux build of the binary never even compiles the Windows syscall code, and vice versa — there's no `unsafe.Pointer` Win32 struct layout sitting in a binary that will never run on Windows, and no risk of a stray `runtime.GOOS == "windows"` check being wrong or forgotten somewhere. The tradeoff is that you can't unit-test a Windows-only file on a Linux CI runner directly — which is why the Windows backend was verified via cross-compilation (`GOOS=windows go build`) rather than execution, and why a real Windows/X11 test pass by someone with the actual hardware remains valuable even after a clean cross-compile.

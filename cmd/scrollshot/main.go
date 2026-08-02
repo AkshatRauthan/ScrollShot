@@ -11,9 +11,8 @@
 //
 // Usage:
 //
-//	scrollshot capture:   capture current window state, add to session
-//	scrollshot finish:    stitch all captures, save final image, clear session
-
+//	scrollshot capture   capture current window state, add to session
+//	scrollshot finish    stitch all captures, save final image, clear session
 package main
 
 import (
@@ -29,6 +28,10 @@ import (
 	"scrollshot/internal/stitch"
 )
 
+// version is set at build time via -ldflags "-X main.version=..." (see
+// .github/workflows/release.yml). Defaults to "dev" for local builds.
+var version = "dev"
+
 func timestamp() string {
 	return time.Now().Format("20060102_150405")
 }
@@ -39,7 +42,18 @@ func die(format string, a ...interface{}) {
 }
 
 func cmdCapture() {
-	backend := capture.Detect()
+	var backend capture.Capturer
+	if forced := os.Getenv("SCROLLSHOT_BACKEND"); forced != "" {
+		backend = capture.Get(forced)
+		if backend == nil {
+			die("unknown backend %q (available: %v)", forced, capture.List())
+		}
+		if !backend.Available() {
+			die("backend %q is not available in this environment", forced)
+		}
+	} else {
+		backend = capture.Detect()
+	}
 	if backend == nil {
 		die("no capture backend available for this environment (tried: %v)", capture.List())
 	}
@@ -102,9 +116,16 @@ func cmdFinish() {
 		frames = append(frames, stitch.ToRGBA(img))
 	}
 
-	result, log := stitch.Stitch(frames)
+	result, log, static, err := stitch.Stitch(frames)
+	if err != nil {
+		die("stitching failed: %v\n\nFrames were left in place at %s for inspection — fix the mismatch and run 'scrollshot finish' again, or delete the session and recapture.", err, sess.Dir())
+	}
 	if result == nil {
 		die("stitching produced no output")
+	}
+
+	if static.TopRows > 0 || static.BottomRows > 0 {
+		fmt.Printf("Detected fixed UI unchanged across all frames — cropped %dpx from top, %dpx from bottom\n", static.TopRows, static.BottomRows)
 	}
 
 	for _, r := range log {
@@ -113,7 +134,7 @@ func cmdFinish() {
 		}
 		warn := ""
 		if r.LowConfident {
-			warn = "  ⚠ no overlap match found — check this join for a duplicate or a gap"
+			warn = fmt.Sprintf("  ⚠ no confident match found (best score %.0f%%) — check this join for a duplicate or a gap", r.MatchScore*100)
 		}
 		fmt.Printf("Frame %d: matched %dpx overlap, added %dpx%s\n", r.Index, r.OverlapPx, r.AddedPx, warn)
 	}
@@ -167,7 +188,7 @@ func notify(path string) {
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Println("Usage: scrollshot [capture|finish]")
+		fmt.Println("Usage: scrollshot [capture|finish|version]")
 		os.Exit(1)
 	}
 	switch os.Args[1] {
@@ -175,8 +196,10 @@ func main() {
 		cmdCapture()
 	case "finish":
 		cmdFinish()
+	case "version", "--version", "-v":
+		fmt.Println("scrollshot", version)
 	default:
-		fmt.Println("Usage: scrollshot [capture|finish]")
+		fmt.Println("Usage: scrollshot [capture|finish|version]")
 		os.Exit(1)
 	}
 }
