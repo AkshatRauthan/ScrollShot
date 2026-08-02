@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Test & vet (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test (with race detector)
+        run: go test ./... -v -race
+
+  windows-test:
+    name: Test & vet (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -v
+
+  cross-compile:
+    name: Cross-compile (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -o /tmp/scrollshot-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/scrollshot
+
+      - name: Vet (target platform)
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go vet ./...
+
+  x11-runtime-check:
+    name: X11 backend runtime check (Xvfb)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install virtual X server + minimal window manager
+        run: sudo apt-get update && sudo apt-get install -y xvfb openbox xterm
+
+      - name: Start Xvfb and openbox
+        shell: bash
+        run: |
+          Xvfb :99 -screen 0 1280x1024x24 &
+          sleep 2
+          export DISPLAY=:99
+          openbox &
+          sleep 2
+
+      - name: Build
+        run: go build -o /tmp/scrollshot ./cmd/scrollshot
+
+      - name: Open a window to capture, then run the X11 backend
+        env:
+          DISPLAY: :99
+          XDG_SESSION_TYPE: x11
+          SCROLLSHOT_BACKEND: x11
+        shell: bash
+        run: |
+          xterm -geometry 80x24+0+0 &
+          sleep 2
+          /tmp/scrollshot capture
+          echo "capture succeeded — X11 backend produced output"
