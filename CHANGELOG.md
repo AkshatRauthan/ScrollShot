@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## v0.2.0 — Improved Stitching Algo + Furthur Cross Platform Support + Added Docs
 
 ### Added
 - **Windows capture backend** (`internal/capture/windows.go`) — raw Win32 syscalls (GDI + `PrintWindow` with `PW_RENDERFULLCONTENT`), zero external dependencies. Handles DPI-aware coordinate scaling. Verified via cross-compilation for `windows/amd64` and `windows/arm64`; not yet runtime-tested on real Windows hardware.
