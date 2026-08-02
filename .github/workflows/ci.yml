@@ -85,6 +85,49 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: go vet ./...
 
+  windows-runtime-check:
+    name: Windows backend runtime check (real capture)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    needs: windows-test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build -o scrollshot.exe .\cmd\scrollshot
+
+      - name: Open a window to capture, then run the Windows backend
+        env:
+          SCROLLSHOT_BACKEND: windows
+        shell: pwsh
+        run: |
+          Start-Process notepad
+          Start-Sleep -Seconds 2
+          .\scrollshot.exe capture
+          if ($LASTEXITCODE -ne 0) {
+            throw "scrollshot capture failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Verify a frame was actually written
+        shell: pwsh
+        run: |
+          $frames = Get-ChildItem "$env:USERPROFILE\.cache\scrollshot_session\frame_*.png" -ErrorAction SilentlyContinue
+          if (-not $frames) {
+            throw "capture reported success but no frame file was found on disk"
+          }
+          Write-Host "Captured frame(s): $($frames.Name -join ', ')"
+
+      - name: Clean up Notepad
+        if: always()
+        shell: pwsh
+        run: Stop-Process -Name notepad -ErrorAction SilentlyContinue
+
   x11-runtime-check:
     name: X11 backend runtime check (Xvfb)
     runs-on: ubuntu-latest
