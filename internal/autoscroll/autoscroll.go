@@ -1,15 +1,13 @@
-// Package autoscroll drives the scrolling itself (as opposed to
-// internal/capture, which only takes the screenshot) — for the planned
-// "autoscroll + auto-capture until screen end or user stoppage" feature.
+// Package autoscroll drives scrolling (internal/capture only captures
+// screenshots) and provides the infrastructure for automated scrolling
+// and capture.
 //
 // This mirrors internal/capture's Scroller-per-backend registry pattern
 // on purpose: scroll simulation is just as OS/compositor-restricted as
 // screenshot capture is (e.g. Wayland's input-injection protocols are
 // locked down similarly to its screenshot protocols), so the same
 // "register available backends, auto-detect one" shape applies here too.
-//
-// Not yet implemented — this file locks in the contract for when that
-// feature gets built.
+
 package autoscroll
 
 import "errors"
@@ -27,17 +25,12 @@ type Scroller interface {
 	// environment.
 	Available() bool
 
-	// ScrollDown scrolls the focused window down by roughly amountPx
-	// pixels (backends may only support "scroll by N wheel clicks" and
-	// approximate this).
+	// ScrollDown requests that the focused window scroll downward by approximately amountPx pixels.
+	// The implementation is best-effort; exact pixel movement isn't required.
 	ScrollDown(amountPx int) error
-
-	// AtBottom attempts to detect whether the window has reached the end
-	// of its scrollable content. Best-effort — depends on the backend;
-	// callers should also support manual stop as a fallback regardless.
-	AtBottom() (bool, error)
 }
 
+// registry contains every backend registered via init().
 var registry []Scroller
 
 // Register adds a backend to the registry. Backends call this from an
@@ -55,4 +48,23 @@ func Detect() Scroller {
 		}
 	}
 	return nil
+}
+
+// Get returns the backend with the given name, or nil if it isn't registered.
+func Get(name string) Scroller {
+	for _, s := range registry {
+		if s.Name() == name {
+			return s
+		}
+	}
+	return nil
+}
+
+// List returns the names of all registered backends.
+func List() []string {
+	names := make([]string, 0, len(registry))
+	for _, s := range registry {
+		names = append(names, s.Name())
+	}
+	return names
 }
