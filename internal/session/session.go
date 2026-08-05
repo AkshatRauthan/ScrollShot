@@ -12,6 +12,9 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"scrollshot/internal/debug"
+	"scrollshot/internal/paths"
 )
 
 // StaleGap is how long since the last capture before a new capture call
@@ -26,13 +29,15 @@ type Session struct {
 	dir string
 }
 
-// New returns a Session pointed at the default cache location.
+// New returns a Session pointed at the OS-appropriate cache location.
+// The directory is resolved by internal/paths.SessionDir, which maps to
+// the correct user cache root on each platform.
 func New() (*Session, error) {
-	home, err := os.UserHomeDir()
+	dir, err := paths.SessionDir()
 	if err != nil {
-		return nil, fmt.Errorf("resolving home directory: %w", err)
+		return nil, fmt.Errorf("getting session dir: %w", err)
 	}
-	return &Session{dir: filepath.Join(home, ".cache", "scrollshot_session")}, nil
+	return &Session{dir: dir}, nil
 }
 
 // Dir returns the session's storage directory.
@@ -44,7 +49,7 @@ func (s *Session) Dir() string {
 func (s *Session) Frames() ([]string, error) {
 	paths, err := filepath.Glob(filepath.Join(s.dir, "frame_*.png"))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("globbing frame files: %w", err)
 	}
 	sort.Strings(paths)
 	return paths, nil
@@ -56,13 +61,14 @@ func (s *Session) Frames() ([]string, error) {
 // Returns true if a stale session was cleared, so the caller can print a
 // heads-up.
 func (s *Session) EnsureFresh() (clearedStale bool, err error) {
+	debug.Logf("session", "checking freshness of %s (stale_gap=%v)", s.dir, StaleGap)
 	if err := os.MkdirAll(s.dir, 0755); err != nil {
 		return false, fmt.Errorf("creating session dir: %w", err)
 	}
 
 	frames, err := s.Frames()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("listing frames: %w", err)
 	}
 	if len(frames) == 0 {
 		return false, nil
@@ -73,12 +79,15 @@ func (s *Session) EnsureFresh() (clearedStale bool, err error) {
 	if err != nil {
 		return false, nil // can't stat it, don't block capture over this
 	}
-	if time.Since(info.ModTime()) > StaleGap {
+	elapsed := time.Since(info.ModTime())
+	if elapsed > StaleGap {
+		debug.Logf("session", "session stale (last modification %v ago) — clearing old frames", elapsed.Round(time.Second))
 		if err := s.Clear(); err != nil {
-			return false, err
+			return false, fmt.Errorf("clearing stale session: %w", err)
 		}
 		return true, nil
 	}
+	debug.Logf("session", "session is fresh (last modification %v ago)", elapsed.Round(time.Second))
 	return false, nil
 }
 
@@ -87,10 +96,11 @@ func (s *Session) EnsureFresh() (clearedStale bool, err error) {
 func (s *Session) SaveFrame(img image.Image) (index int, path string, err error) {
 	frames, err := s.Frames()
 	if err != nil {
-		return 0, "", err
+		return 0, "", fmt.Errorf("listing existing frames: %w", err)
 	}
-	index = len(frames)
-	path = filepath.Join(s.dir, fmt.Sprintf("frame_%04d.png", index))
+	idx := len(frames)
+	debug.Logf("session", "saving frame #%d", idx)
+	path = filepath.Join(s.dir, fmt.Sprintf("frame_%04d.png", idx))
 
 	f, err := os.Create(path)
 	if err != nil {
@@ -101,16 +111,17 @@ func (s *Session) SaveFrame(img image.Image) (index int, path string, err error)
 	if err := png.Encode(f, img); err != nil {
 		return 0, "", fmt.Errorf("encoding frame: %w", err)
 	}
-	return index, path, nil
+	return idx, path, nil
 }
 
 // Clear deletes all frames in the session, leaving the directory ready
 // for a new session. Called after a successful finish, and internally
 // by EnsureFresh when a stale session is detected.
 func (s *Session) Clear() error {
+	debug.Logf("session", "clearing session directory %s", s.dir)
 	frames, err := s.Frames()
 	if err != nil {
-		return err
+		return fmt.Errorf("listing frames to clear: %w", err)
 	}
 	for _, f := range frames {
 		os.Remove(f)

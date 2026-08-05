@@ -3,6 +3,7 @@ module scrollshot
 go 1.22.2
 
 require (
+	github.com/bendahl/uinput v1.7.0
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/jezek/xgb v1.3.1
 	github.com/jezek/xgbutil v0.0.0-20260124183602-9fd151d6a51a

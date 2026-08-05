@@ -32,6 +32,8 @@ package stitch
 import (
 	"fmt"
 	"image"
+
+	"scrollshot/internal/debug"
 )
 
 // FrameResult reports what happened when stitching one frame onto the
@@ -43,6 +45,13 @@ type FrameResult struct {
 	AddedPx      int
 	MatchScore   float64 // 0..1, fraction of sampled points that agreed within tolerance
 	LowConfident bool    // true if no match cleared both the score and margin bars
+}
+
+// Our new struct for returning the result of FindOverlap function
+type OverlapResult struct {
+	OverlapPx  int
+	AddedPx    int
+	MatchScore float64
 }
 
 // ToRGBA converts any image.Image into *image.RGBA, which the rest of
@@ -293,13 +302,13 @@ func scoreOffsetDense(top, bottom *image.RGBA, offset int, bgR, bgG, bgB uint32)
 // the score with information-free agreement, masking whether the
 // content that actually distinguishes a true match from a wrong one
 // lines up at all.
-func FindOverlap(top, bottom *image.RGBA) (int, float64) {
+func FindOverlap(top, bottom *image.RGBA) OverlapResult {
 	hTop := top.Bounds().Dy()
 	hBot := bottom.Bounds().Dy()
 	w := top.Bounds().Dx()
 
 	if hTop < stripHeight || hBot < stripHeight {
-		return 0, 0
+		return OverlapResult{}
 	}
 
 	bgR, bgG, bgB := dominantColor(top, stripHeight*3)
@@ -322,7 +331,7 @@ func FindOverlap(top, bottom *image.RGBA) (int, float64) {
 		maxOffset = hTop - stripHeight
 	}
 	if maxOffset < 0 {
-		return 0, 0
+		return OverlapResult{}
 	}
 
 	// Pass 1: cheap sparse scan across every possible offset.
@@ -338,7 +347,7 @@ func FindOverlap(top, bottom *image.RGBA) (int, float64) {
 		// No offset had enough distinctive content in the sparse sample at
 		// all — nothing trustworthy to rank. Dense fallback below still
 		// gets a chance at the naive best-guess offset in this rare case.
-		return 0, 0
+		return OverlapResult{}
 	}
 
 	sparseBest := candidates[0]
@@ -366,12 +375,16 @@ func FindOverlap(top, bottom *image.RGBA) (int, float64) {
 	// match against — reject rather than trust a score built on too thin
 	// a sample.
 	if bestInformative < minInformativePoints {
-		return 0, bestScore
+		return OverlapResult{
+			MatchScore: bestScore,
+		}
 	}
 
 	// Confidence bar: the winner has to be a good match on its own merits.
 	if bestScore < minMatchScore {
-		return 0, bestScore
+		return OverlapResult{
+			MatchScore: bestScore,
+		}
 	}
 
 	// Margin bar, using dense scores for both sides of the comparison —
@@ -386,11 +399,19 @@ func FindOverlap(top, bottom *image.RGBA) (int, float64) {
 	if bestScore < highConfidenceOverride && sparseRival.score >= 0 {
 		rivalScore, _ := scoreOffsetDense(top, bottom, sparseRival.offset, bgR, bgG, bgB)
 		if (bestScore - rivalScore) < minMargin {
-			return 0, bestScore
+			return OverlapResult{
+				MatchScore: bestScore,
+			}
 		}
 	}
 
-	return stripHeight + sparseBest.offset, bestScore
+	overlap := stripHeight + sparseBest.offset
+
+	return OverlapResult{
+		OverlapPx:  overlap,
+		AddedPx:    bottom.Bounds().Dy() - overlap,
+		MatchScore: bestScore,
+	}
 }
 
 func abs(x int) int {
@@ -578,6 +599,7 @@ func Stitch(frames []*image.RGBA) (*image.RGBA, []FrameResult, StaticEdges, erro
 	}
 
 	expectedWidth := frames[0].Bounds().Dx()
+	debug.Logf("stitch", "stitching %d frames (expected_width=%dpx)", len(frames), expectedWidth)
 	for i, f := range frames {
 		if f.Bounds().Dx() != expectedWidth {
 			return nil, nil, StaticEdges{}, &ErrDimensionMismatch{
@@ -589,6 +611,8 @@ func Stitch(frames []*image.RGBA) (*image.RGBA, []FrameResult, StaticEdges, erro
 	}
 
 	static := DetectStaticEdges(frames)
+	debug.Logf("stitch", "detected static edges: top=%dpx, bottom=%dpx", static.TopRows, static.BottomRows)
+
 	trimmed := make([]*image.RGBA, len(frames))
 	for i, f := range frames {
 		trimmed[i] = cropVertical(f, static.TopRows, static.BottomRows)
@@ -596,32 +620,49 @@ func Stitch(frames []*image.RGBA) (*image.RGBA, []FrameResult, StaticEdges, erro
 
 	results := make([]FrameResult, 0, len(trimmed))
 	current := trimmed[0]
+	// prevFrame is the most-recently-captured trimmed frame — used as the
+	// reference 'top' for FindOverlap rather than the growing stitched
+	// canvas. Passing the canvas caused dominantColor to sample rows far
+	// above the relevant reference strip and capped maxOffset against the
+	// canvas height instead of the frame height, degrading match quality.
+	prevFrame := trimmed[0]
 	results = append(results, FrameResult{Index: 0, AddedPx: current.Bounds().Dy(), MatchScore: 1})
 
 	for i := 1; i < len(trimmed); i++ {
 		next := trimmed[i]
 
-		overlap, score := FindOverlap(current, next)
+		// Pass the previous *frame* (not the growing canvas) as the
+		// reference so dominantColor, maxOffset, and strip sampling all
+		// operate on a fixed-height image of the same size as next.
+		match := FindOverlap(prevFrame, next)
+
+		// When no confident match is found (OverlapPx==0), fall back to
+		// appending the entire next frame — this preserves v0.2.0 behaviour
+		// where a rejection meant "no rows to skip" rather than "add nothing".
+		overlap := match.OverlapPx
 		newRows := next.Bounds().Dy() - overlap
+
+		debug.Logf("stitch", "frame %d matched: overlap=%dpx added=%dpx score=%.1f%%", i, overlap, newRows, match.MatchScore*100)
 
 		combined := image.NewRGBA(image.Rect(0, 0, expectedWidth, current.Bounds().Dy()+newRows))
 		for y := 0; y < current.Bounds().Dy(); y++ {
-			for x := 0; x < expectedWidth; x++ {
+			for x := range expectedWidth {
 				combined.Set(x, y, current.At(x, y))
 			}
 		}
-		for y := 0; y < newRows; y++ {
-			for x := 0; x < expectedWidth; x++ {
+		for y := range newRows {
+			for x := range expectedWidth {
 				combined.Set(x, current.Bounds().Dy()+y, next.At(x, overlap+y))
 			}
 		}
 		current = combined
+		prevFrame = next
 
 		results = append(results, FrameResult{
 			Index:        i,
 			OverlapPx:    overlap,
 			AddedPx:      newRows,
-			MatchScore:   score,
+			MatchScore:   match.MatchScore,
 			LowConfident: overlap == 0,
 		})
 	}

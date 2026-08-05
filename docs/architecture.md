@@ -11,9 +11,12 @@ scrollshot/
     ├── capture/                  "how do I grab a screenshot" — OS/protocol-specific
     ├── session/                  "where do captured frames live between commands"
     ├── stitch/                   "how do I glue frames together" — pure image logic
+    ├── autoscroll/               "drive the scrolling itself" — controller + per-OS backends
+    ├── paths/                    "where do session and output files go" — OS-aware paths
+    ├── debug/                    "structured verbose logging" — single Enable() call
+    ├── notify/                   "desktop notification after finish" — OS-specific
     ├── edit/                     "adjust frames before/after stitching" — planned
-    ├── export/                   "control output file size" — planned
-    └── autoscroll/               "drive the scrolling itself" — planned
+    └── export/                   "control output file size" — planned
 ```
 
 Each package answers exactly one question. That's the organizing principle, and it's worth understanding because it's what makes the rest of the design decisions below make sense.
@@ -54,9 +57,24 @@ Session management (where frames get staged, stale-session auto-clearing) used t
 
 The stitching engine takes `image.RGBA` in and produces `image.RGBA` out. It has no knowledge of files, sessions, or capture backends. This isn't just clean separation for its own sake — it's what made the extensive testing this package has been through possible at all. Every fix documented in `CHANGELOG.md` started with a small Go program generating synthetic test frames with a known, exact expected outcome, feeding them directly into `stitch.Stitch()`, and checking the output — no session directories, no real screenshots, no capture backend needed. See [`docs/stitching.md`](stitching.md) for the algorithm itself.
 
-## `internal/edit`, `internal/export`, `internal/autoscroll` — interfaces before implementations
+## `internal/paths` and `internal/debug` — cross-cutting concerns
 
-These three packages exist today as real Go interfaces and function signatures with `ErrNotImplemented` bodies, not as empty folders or TODO comments. That's deliberate: the contract each will expose to the rest of the codebase was decided and locked in ahead of time, so when one gets built, it's filling in a function body — not renegotiating how `main.go` or `session` will call it. `autoscroll` in particular mirrors `capture`'s per-backend registry pattern on purpose, since driving scroll input is just as OS/compositor-restricted as taking a screenshot is (see `autoscroll.go`'s doc comment for the reasoning).
+`internal/paths` answers "where does this file live?" for every platform. All session and output directory logic centralises here, with a fallback chain that probes writability by actually creating a file — the only reliable way to detect OneDrive-redirected or Controlled Folder Access directories on Windows without a TOCTOU race.
+
+`internal/debug` is the single logging choke-point. Components call `debug.Logf("component", "...")`, and the entire output is gated behind one `Enable()` call, toggled by `--debug` or `SCROLLSHOT_DEBUG=1`. Nothing in the packages themselves decides whether logs are visible — that's always the CLI's decision.
+
+`internal/notify` fires a desktop notification after `finish` or `auto` completes. It is build-tag gated (`notify_linux.go`, `notify_windows.go`, `notify_other.go`) so platform-specific mechanisms (libnotify on Linux, Windows toast API via PowerShell) are never compiled into the wrong binary.
+
+## `internal/autoscroll` — mirrors `capture`'s per-backend pattern
+
+`autoscroll` was designed from the start to mirror `capture`'s registry pattern because driving scroll input is just as OS/compositor-restricted as taking a screenshot. The package is split into:
+
+- `controller.go` — the platform-agnostic scroll loop: frame capture, overlap detection, stagnation tracking, stop conditions
+- `config.go` — tuneable parameters (`MaxFrames`, `Delay`, `ScrollFraction`, `MinimumAdvancePx`, `StagnationLimit`)
+- `result.go` — the per-frame result type returned to the caller
+- `backend/` — OS-gated backends: `linux_uinput.go` (kernel `uinput` module, works on X11 and Wayland), `windows.go` (`SendInput` Win32 API), `detect_*.go` (build-tag-gated factory functions)
+
+The controller has no `switch runtime.GOOS` — it calls `backend.Detect()` and works with whatever `Scroller` comes back. Adding a macOS backend means adding one new file in `backend/`, not touching the controller.
 
 ## Why build tags instead of runtime OS checks everywhere
 
