@@ -2,13 +2,12 @@ package autoscroll
 
 import (
 	"errors"
-	"fmt"
 	"image"
-	"os"
 	"time"
 
 	"scrollshot/internal/autoscroll/backend"
 	"scrollshot/internal/capture"
+	"scrollshot/internal/debug"
 	"scrollshot/internal/session"
 	"scrollshot/internal/stitch"
 )
@@ -37,9 +36,6 @@ type Controller struct {
 	// staticEdges are cached after calibration and used to crop frames
 	// before overlap analysis — matching what Stitch does internally.
 	staticEdges stitch.StaticEdges
-
-	// verbose enables per-frame debug output (set via SCROLLSHOT_DEBUG=1).
-	verbose bool
 }
 
 // New validates dependencies and constructs a controller.
@@ -47,13 +43,13 @@ type Controller struct {
 // Callers are responsible for calling sess.EnsureFresh() before Run —
 // New does not call it to avoid a redundant double-call.
 func New(
-	c capture.Capturer,
+	c_arg capture.Capturer,
 	s backend.Scroller,
 	sess *session.Session,
 	cfg Config,
 ) (*Controller, error) {
 
-	if c == nil {
+	if c_arg == nil {
 		return nil, errors.New("nil capturer")
 	}
 	if s == nil {
@@ -79,19 +75,15 @@ func New(
 		cfg.StagnationLimit = DefaultConfig().StagnationLimit
 	}
 
-	return &Controller{
-		Capturer: c,
+	c := &Controller{
+		Capturer: c_arg,
 		Scroller: s,
 		Session:  sess,
 		Config:   cfg,
-		verbose:  os.Getenv("SCROLLSHOT_DEBUG") != "",
-	}, nil
-}
-
-func (c *Controller) debugf(format string, args ...any) {
-	if c.verbose {
-		fmt.Fprintf(os.Stderr, "[scrollshot/auto] "+format+"\n", args...)
 	}
+	debug.Logf("auto", "initialized autoscroll controller (max_frames=%d, delay=%v, scroll_fraction=%.2f, min_advance_px=%d, stagnation_limit=%d)",
+		cfg.MaxFrames, cfg.Delay, cfg.ScrollFraction, cfg.MinimumAdvancePx, cfg.StagnationLimit)
+	return c, nil
 }
 
 // captureFrame captures the focused window, saves it to the session,
@@ -106,7 +98,7 @@ func (c *Controller) captureFrame() (*image.RGBA, error) {
 	}
 	c.framesCaptured++
 	rgba := stitch.ToRGBA(img)
-	c.debugf("frame %d captured (raw size: %dx%d)",
+	debug.Logf("auto", "frame %d captured (raw size: %dx%d)",
 		c.framesCaptured-1, rgba.Bounds().Dx(), rgba.Bounds().Dy())
 	return rgba, nil
 }
@@ -121,7 +113,7 @@ func (c *Controller) calibrate(a, b *image.RGBA) {
 		h = a.Bounds().Dy()
 	}
 	c.viewportH = h
-	c.debugf("viewport calibrated: height=%dpx (top_static=%dpx bottom_static=%dpx)",
+	debug.Logf("auto", "viewport calibrated: height=%dpx (top_static=%dpx bottom_static=%dpx)",
 		c.viewportH, c.staticEdges.TopRows, c.staticEdges.BottomRows)
 }
 
@@ -183,7 +175,7 @@ func (c *Controller) updateStagnation(match stitch.OverlapResult) bool {
 		// (e.g. identical frames at page bottom) eventually stop the session.
 		c.noMatchStagnation++
 		noMatchLimit := c.Config.StagnationLimit * 2
-		c.debugf("  overlap: no confident match (score=%.1f%%) — no-match stagnation: %d/%d",
+		debug.Logf("auto", "  overlap: no confident match (score=%.1f%%) — no-match stagnation: %d/%d",
 			match.MatchScore*100, c.noMatchStagnation, noMatchLimit)
 		return c.noMatchStagnation >= noMatchLimit
 	}
@@ -207,7 +199,7 @@ func (c *Controller) updateStagnation(match stitch.OverlapResult) bool {
 		c.stagnation = 0
 	}
 
-	c.debugf("  overlap: %dpx, added: %dpx (min=%dpx), score: %.1f%% — stagnation: %d/%d",
+	debug.Logf("auto", "  overlap: %dpx, added: %dpx (min=%dpx), score: %.1f%% — stagnation: %d/%d",
 		match.OverlapPx, match.AddedPx, effectiveMin, match.MatchScore*100,
 		c.stagnation, c.Config.StagnationLimit)
 
@@ -224,7 +216,7 @@ func (c *Controller) scroll() error {
 		}
 	}
 	amount := int(float64(h) * c.Config.ScrollFraction)
-	c.debugf("scrolling down %dpx (viewport=%dpx fraction=%.2f)",
+	debug.Logf("auto", "scrolling down %dpx (viewport=%dpx fraction=%.2f)",
 		amount, h, c.Config.ScrollFraction)
 	return c.Scroller.ScrollDown(amount)
 }
@@ -233,8 +225,11 @@ func (c *Controller) scroll() error {
 //
 // The caller must call sess.EnsureFresh() before Run.
 func (c *Controller) Run() (Result, error) {
+	debug.Logf("auto", "starting auto-capture session...")
+
 	first, err := c.captureFrame()
 	if err != nil {
+		debug.Logf("auto", "initial capture failed: %v", err)
 		return Result{FramesCaptured: c.framesCaptured, StopReason: StopError}, err
 	}
 	c.previous = first
@@ -243,6 +238,7 @@ func (c *Controller) Run() (Result, error) {
 	for c.framesCaptured < c.Config.MaxFrames {
 
 		if err := c.scroll(); err != nil {
+			debug.Logf("auto", "scrolling failed: %v", err)
 			return Result{FramesCaptured: c.framesCaptured, StopReason: StopError}, err
 		}
 
@@ -250,6 +246,7 @@ func (c *Controller) Run() (Result, error) {
 
 		current, err := c.captureFrame()
 		if err != nil {
+			debug.Logf("auto", "subsequent capture failed: %v", err)
 			return Result{FramesCaptured: c.framesCaptured, StopReason: StopError}, err
 		}
 
@@ -264,6 +261,7 @@ func (c *Controller) Run() (Result, error) {
 		match := c.analyze(prevCropped, currentCropped)
 
 		if c.updateStagnation(match) {
+			debug.Logf("auto", "stagnation limit reached, stopping run")
 			return Result{FramesCaptured: c.framesCaptured, StopReason: StopStagnation}, nil
 		}
 
@@ -271,5 +269,6 @@ func (c *Controller) Run() (Result, error) {
 		prevCropped = currentCropped
 	}
 
+	debug.Logf("auto", "max frame limit reached (%d), stopping run", c.Config.MaxFrames)
 	return Result{FramesCaptured: c.framesCaptured, StopReason: StopMaxFrames}, nil
 }

@@ -7,6 +7,8 @@ import (
 	"image"
 	"syscall"
 	"unsafe"
+
+	"scrollshot/internal/debug"
 )
 
 // windowsScreenshot captures via direct Win32 API calls (GDI + PrintWindow),
@@ -104,9 +106,12 @@ func (w *windowsScreenshot) CaptureActiveWindow() (image.Image, error) {
 	}
 	width := int(r.right - r.left)
 	height := int(r.bottom - r.top)
+
 	if width <= 0 || height <= 0 {
-		return nil, fmt.Errorf("window has invalid dimensions (%dx%d)", width, height)
+		return nil, fmt.Errorf("invalid window rect: %d x %d", width, height)
 	}
+
+	debug.Logf("capture/win", "capturing foreground window (hwnd=%v, size=%dx%d)", hwnd, width, height)
 
 	hdcScreen, _, _ := procGetDC.Call(0)
 	if hdcScreen == 0 {

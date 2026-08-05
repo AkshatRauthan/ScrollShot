@@ -28,6 +28,7 @@ import (
 
 	"scrollshot/internal/autoscroll"
 	"scrollshot/internal/capture"
+	"scrollshot/internal/debug"
 	"scrollshot/internal/notify"
 	"scrollshot/internal/paths"
 	"scrollshot/internal/session"
@@ -261,10 +262,22 @@ func sendNotification(path string) {
 }
 
 func main() {
+	// Intercept global --debug flag anywhere in the arguments
+	filteredArgs := make([]string, 0, len(os.Args))
+	for _, arg := range os.Args {
+		if arg == "-debug" || arg == "--debug" {
+			debug.Enable()
+		} else {
+			filteredArgs = append(filteredArgs, arg)
+		}
+	}
+	os.Args = filteredArgs
+
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: scrollshot [capture|finish|auto|version]")
+		printUsage()
 		os.Exit(1)
 	}
+
 	switch os.Args[1] {
 	case "capture":
 		wait := parseWait("capture", os.Args[2:])
@@ -276,8 +289,24 @@ func main() {
 		cmdAuto(wait)
 	case "version", "--version", "-v":
 		fmt.Println("scrollshot", version)
+	case "help", "--help", "-h":
+		printUsage()
 	default:
-		fmt.Println("Usage: scrollshot [capture|finish|auto|version]")
+		fmt.Printf("Unknown command: %s\n\n", os.Args[1])
+		printUsage()
 		os.Exit(1)
 	}
+}
+
+func printUsage() {
+	fmt.Println(`scrollshot — scrolling screenshot tool
+
+Usage:
+  scrollshot capture [-wait N]   capture current window (waits N sec first, default 5)
+  scrollshot finish              stitch all captures, save final image, clear session
+  scrollshot auto    [-wait N]   automatic scroll-capture-stitch (waits N sec first, default 5)
+  scrollshot version             print version
+  scrollshot help                print this help message
+
+Tip: Pass --debug or set SCROLLSHOT_DEBUG=1 to enable detailed verbose logging.`)
 }

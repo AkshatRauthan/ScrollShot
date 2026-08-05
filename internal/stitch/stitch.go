@@ -32,6 +32,8 @@ package stitch
 import (
 	"fmt"
 	"image"
+
+	"scrollshot/internal/debug"
 )
 
 // FrameResult reports what happened when stitching one frame onto the
@@ -597,6 +599,7 @@ func Stitch(frames []*image.RGBA) (*image.RGBA, []FrameResult, StaticEdges, erro
 	}
 
 	expectedWidth := frames[0].Bounds().Dx()
+	debug.Logf("stitch", "stitching %d frames (expected_width=%dpx)", len(frames), expectedWidth)
 	for i, f := range frames {
 		if f.Bounds().Dx() != expectedWidth {
 			return nil, nil, StaticEdges{}, &ErrDimensionMismatch{
@@ -608,6 +611,8 @@ func Stitch(frames []*image.RGBA) (*image.RGBA, []FrameResult, StaticEdges, erro
 	}
 
 	static := DetectStaticEdges(frames)
+	debug.Logf("stitch", "detected static edges: top=%dpx, bottom=%dpx", static.TopRows, static.BottomRows)
+
 	trimmed := make([]*image.RGBA, len(frames))
 	for i, f := range frames {
 		trimmed[i] = cropVertical(f, static.TopRows, static.BottomRows)
@@ -636,6 +641,8 @@ func Stitch(frames []*image.RGBA) (*image.RGBA, []FrameResult, StaticEdges, erro
 		// where a rejection meant "no rows to skip" rather than "add nothing".
 		overlap := match.OverlapPx
 		newRows := next.Bounds().Dy() - overlap
+
+		debug.Logf("stitch", "frame %d matched: overlap=%dpx added=%dpx score=%.1f%%", i, overlap, newRows, match.MatchScore*100)
 
 		combined := image.NewRGBA(image.Rect(0, 0, expectedWidth, current.Bounds().Dy()+newRows))
 		for y := 0; y < current.Bounds().Dy(); y++ {
