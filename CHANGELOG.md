@@ -1,8 +1,34 @@
 # Changelog
 
-All notable changes to this project are documented here. The format loosely follows [Keep a Changelog](https://keepachangelog.com/).
+## v0.3.0 — Autoscroll, debug logging, and Windows stability
+
+### Added
+- `scrollshot auto` command: full scroll-capture-stitch in a single step on Windows and Linux.
+- Native Windows autoscroll backend via `SendInput` Win32 API.
+- Native Linux autoscroll backend via `uinput` kernel module (X11 and Wayland).
+- Centralized debug logging (`internal/debug`) with `--debug` flag and `SCROLLSHOT_DEBUG=1` env var.
+- Desktop notifications on capture and finish completion.
+- Output directory fallback chain (`Pictures/Screenshots` → `Pictures` → `scrollshot_output`) with live write-probe to handle OneDrive and Controlled Folder Access on Windows.
+
+### Improved
+- Windows GDI capture: bitmap deselected from DC before `GetDIBits` to prevent silent zero-scanline failures.
+- Windows home directory resolution falls back through `%USERPROFILE%`, `%LOCALAPPDATA%`, and `%APPDATA%`.
+- Debug logging instrumented across `session`, `stitch`, `capture/windows`, `paths`, and `autoscroll`.
+- Errors wrapped consistently with `fmt.Errorf("context: %w", err)` throughout the codebase.
+
+### Fixed
+- `GetDIBits` failing silently when bitmap was still selected into the device context.
+- `os.Create` failing with "The system cannot find the file specified" for OneDrive-managed and junction-target directories.
+- Output saved to `C:\Users\Pictures\...` (missing username) due to `HOMEDRIVE`+`HOMEPATH` resolving without the user profile subdirectory.
+
+### Refactored
+- Autoscroll logic split into controller, config, and result packages.
+- Session directory resolution moved to `internal/paths` for OS-aware cache location.
+
+---
 
 ## v0.2.0 — Cross-platform support, improved stitching, and documentation
+
 
 ### Added
 - Native Windows capture backend using raw Win32 APIs (amd64, arm64).
@@ -27,7 +53,7 @@ All notable changes to this project are documented here. The format loosely foll
 - Fixed valid matches being rejected because of rendering noise.
 - Improved handling of stale capture sessions by automatically clearing unfinished sessions.
 
-### Changed
+### Refactored
 - Reorganized the project into modular packages (`capture`, `session`, `stitch`, `edit`, `export`, and `autoscroll`).
 - Separated stitching and static-edge detection tolerances for easier tuning.
 - Adjusted static-edge detection limits to better match real-world interfaces.

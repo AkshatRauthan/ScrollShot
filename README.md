@@ -30,6 +30,25 @@ Verified against real captures up to 23 frames at 2.8K resolution, and against r
 
 ---
 
+## Quick Start
+
+```bash
+# Automatic — switch to the window, then run:
+scrollshot auto
+# Waits 5s, scrolls to the bottom, stitches, and saves automatically.
+
+# Manual — capture frame by frame:
+scrollshot capture   # switch to window first; repeats as many times as you scroll
+scrollshot capture
+scrollshot finish    # stitch and save
+```
+
+Output is saved to `~/Pictures/Screenshots/` (or the first writable fallback).
+
+For the full command reference, flags, troubleshooting, and platform setup see **[`docs/usage.md`](docs/usage.md)**.
+
+---
+
 ## Platform support
 
 | Platform | Backend | Status |
@@ -63,14 +82,17 @@ The right backend is selected automatically at runtime — see [`docs/capturing.
 
 ```
 scrollshot/
-├── cmd/scrollshot/       CLI entrypoint
+├── cmd/scrollshot/        CLI entrypoint
 └── internal/
-    ├── capture/           pluggable screenshot backends, one per OS/protocol
-    ├── session/            frame staging between capture and finish
-    ├── stitch/             the matching + stitching engine
-    ├── edit/               [planned] crop / reorder frames
-    ├── export/              [planned] lossless & lossy size control
-    └── autoscroll/         [planned] driven scrolling + end-of-page detection
+    ├── capture/             pluggable screenshot backends, one per OS/protocol
+    ├── session/             frame staging between capture and finish
+    ├── stitch/              the matching + stitching engine
+    ├── autoscroll/          driven scrolling + end-of-page detection (Windows & Linux)
+    ├── paths/               OS-aware session and output directory resolution
+    ├── debug/               centralized structured logging
+    ├── notify/              desktop notifications after finish
+    ├── edit/                [planned] crop / reorder frames
+    └── export/              [planned] lossless & lossy size control
 ```
 
 See [`docs/architecture.md`](docs/architecture.md) for the reasoning behind this shape, and [`CONTRIBUTING.md`](CONTRIBUTING.md) if you want to add a backend or feature yourself.
@@ -81,9 +103,10 @@ See [`docs/architecture.md`](docs/architecture.md) for the reasoning behind this
 
 - **macOS backend** — deferred, next up when picked back up
 - **Wayland fallback backend** (`grim`/`slurp`) for wlroots compositors without a portal installed
-- **Autoscroll + auto-capture** — drive scrolling automatically and capture continuously until the end of the page
 - **Frame cropping & reordering** — manual controls on top of the automatic fixed-UI detection already in place
 - **Lossless & lossy export control** — tighter compression or scaled-down output when file size matters more than pixel-perfect fidelity
+
+✅ **Autoscroll** (`scrollshot auto`) shipped in v0.3.0 — Windows and Linux, fully automatic.
 
 ## Known limitations
 
