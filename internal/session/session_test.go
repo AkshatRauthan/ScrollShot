@@ -231,9 +231,9 @@ func TestSession_Dir_ReturnsConfiguredPath(t *testing.T) {
 }
 
 func TestSession_New_ReturnsPathUnderHomeCache(t *testing.T) {
-	// Sanity check on the real constructor (not the test helper) — this
-	// is the one path in the package that actually depends on the real
-	// environment, so it's tested separately and lightly.
+	// Sanity-check the real constructor — this is the one path in the
+	// package that depends on the real environment, so it's tested
+	// separately and lightly.
 	s, err := New()
 	if err != nil {
 		t.Fatalf("New(): unexpected error: %v", err)
@@ -241,9 +241,12 @@ func TestSession_New_ReturnsPathUnderHomeCache(t *testing.T) {
 	if s.Dir() == "" {
 		t.Fatalf("New() produced an empty directory path")
 	}
-	home, _ := os.UserHomeDir()
-	wantSuffix := filepath.Join(".cache", "scrollshot_session")
-	if filepath.Join(home, wantSuffix) != s.Dir() {
-		t.Fatalf("expected New() to return %s, got %s", filepath.Join(home, wantSuffix), s.Dir())
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		t.Fatalf("os.UserCacheDir(): unexpected error: %v", err)
+	}
+	want := filepath.Join(cache, "scrollshot_session")
+	if s.Dir() != want {
+		t.Fatalf("expected New() to return %s, got %s", want, s.Dir())
 	}
 }

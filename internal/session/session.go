@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"scrollshot/internal/paths"
 )
 
 // StaleGap is how long since the last capture before a new capture call
@@ -26,13 +28,15 @@ type Session struct {
 	dir string
 }
 
-// New returns a Session pointed at the default cache location.
+// New returns a Session pointed at the OS-appropriate cache location.
+// The directory is resolved by internal/paths.SessionDir, which maps to
+// the correct user cache root on each platform.
 func New() (*Session, error) {
-	home, err := os.UserHomeDir()
+	dir, err := paths.SessionDir()
 	if err != nil {
-		return nil, fmt.Errorf("resolving home directory: %w", err)
+		return nil, err
 	}
-	return &Session{dir: filepath.Join(home, ".cache", "scrollshot_session")}, nil
+	return &Session{dir: dir}, nil
 }
 
 // Dir returns the session's storage directory.
