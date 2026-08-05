@@ -67,7 +67,7 @@ func isValidHome(path string) bool {
 	}
 	base := strings.ToLower(filepath.Base(filepath.Clean(path)))
 	// "users" means it resolved to C:\Users without a username subfolder
-	return base != "users" && base != "\\" && base != "."
+	return base != "users" && base != "\\" && base != "/" && base != "."
 }
 
 // CreateOutput tries multiple fallback directories to save the final stitched
