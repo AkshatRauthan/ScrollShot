@@ -15,10 +15,12 @@ var (
 	ErrNoBackend = errors.New("autoscroll: no supported scrolling backend available")
 )
 
-// DetectScroller discovers and returns the best scrolling backend
-// available on the current system.
+// DetectScroller discovers and returns the best scrolling backend available
+// on the current system. The actual selection is made by the build-tag-gated
+// backend.Detect() function — one per platform — so this function is fully
+// platform-agnostic.
 func DetectScroller() (backend.Scroller, error) {
-	scroller, err := backend.NewLinuxUInput()
+	scroller, err := backend.Detect()
 	if err != nil {
 		return nil, err
 	}
