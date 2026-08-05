@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"scrollshot/internal/debug"
 )
 
 // SessionDir returns the OS-appropriate directory for storing capture
@@ -26,23 +29,81 @@ func SessionDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolving user cache directory: %w", err)
 	}
-	return filepath.Join(cache, "scrollshot_session"), nil
+	dir := filepath.Join(cache, "scrollshot_session")
+	debug.Logf("paths", "session dir: %s", dir)
+	return dir, nil
 }
 
-// OutputDir returns the OS-appropriate directory for saving the final
-// stitched screenshot, creating it if it does not already exist.
-//
-//   - Linux:   ~/Pictures/Screenshots
-//   - macOS:   ~/Pictures/Screenshots
-//   - Windows: %USERPROFILE%\Pictures\Screenshots
-func OutputDir() (string, error) {
+// getHomeDir resolves the user's home directory robustly.
+// On Windows, if os.UserHomeDir() returns C:\Users (missing username),
+// it falls back to %USERPROFILE%, %LOCALAPPDATA%, or %APPDATA%.
+func getHomeDir() string {
 	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolving home directory: %w", err)
+	if err == nil && isValidHome(home) {
+		return home
 	}
-	dir := filepath.Join(home, "Pictures", "Screenshots")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("creating output directory %s: %w", dir, err)
+	if u := os.Getenv("USERPROFILE"); isValidHome(u) {
+		return u
 	}
-	return dir, nil
+	if local := os.Getenv("LOCALAPPDATA"); local != "" {
+		// LocalAppData is C:\Users\Username\AppData\Local
+		h := filepath.Dir(filepath.Dir(local))
+		if isValidHome(h) {
+			return h
+		}
+	}
+	if app := os.Getenv("APPDATA"); app != "" {
+		h := filepath.Dir(filepath.Dir(app))
+		if isValidHome(h) {
+			return h
+		}
+	}
+	return home
+}
+
+func isValidHome(path string) bool {
+	if path == "" {
+		return false
+	}
+	base := strings.ToLower(filepath.Base(filepath.Clean(path)))
+	// "users" means it resolved to C:\Users without a username subfolder
+	return base != "users" && base != "\\" && base != "."
+}
+
+// CreateOutput tries multiple fallback directories to save the final stitched
+// screenshot. It actually attempts to create the target file, which is the
+// only reliable way on Windows to verify if a OneDrive/junction directory
+// is truly writable, avoiding "The system cannot find the file specified" errors.
+func CreateOutput(filename string) (*os.File, string, error) {
+	home := getHomeDir()
+	debug.Logf("paths", "resolved home dir: %s", home)
+
+	candidates := []string{
+		filepath.Join(home, "Pictures", "Screenshots"),
+		filepath.Join(home, "Pictures"),
+		filepath.Join(home, "scrollshot_output"),
+		home,
+	}
+
+	for _, dir := range candidates {
+		if dir == "" {
+			continue
+		}
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			debug.Logf("paths", "candidate %s failed MkdirAll: %v", dir, err)
+			continue
+		}
+
+		path := filepath.Join(dir, filename)
+		f, err := os.Create(path)
+		if err != nil {
+			debug.Logf("paths", "candidate %s failed os.Create for %s: %v", dir, filename, err)
+			continue
+		}
+
+		debug.Logf("paths", "successfully created output file: %s", path)
+		return f, path, nil
+	}
+
+	return nil, "", fmt.Errorf("could not create output file in any candidate directory under %s", home)
 }

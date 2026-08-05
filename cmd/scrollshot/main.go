@@ -23,7 +23,6 @@ import (
 	"image"
 	"image/png"
 	"os"
-	"path/filepath"
 	"time"
 
 	"scrollshot/internal/autoscroll"
@@ -63,6 +62,10 @@ func parseWait(subcommand string, args []string) time.Duration {
 }
 
 func cmdCapture(wait time.Duration) {
+	if wait > 0 {
+		fmt.Printf("Waiting %v before capturing...\n", wait)
+		time.Sleep(wait)
+	}
 	var backend capture.Capturer
 	if forced := os.Getenv("SCROLLSHOT_BACKEND"); forced != "" {
 		backend = capture.Get(forced)
@@ -108,7 +111,7 @@ func cmdCapture(wait time.Duration) {
 func loadImage(path string) (image.Image, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("opening image %s: %w", path, err)
 	}
 	defer f.Close()
 	return png.Decode(f)
@@ -174,18 +177,15 @@ func cmdFinish() {
 }
 
 func saveOutput(img image.Image) (string, error) {
-	dir, err := paths.OutputDir()
+	filename := "scrolling_" + timestamp() + ".png"
+	f, path, err := paths.CreateOutput(filename)
 	if err != nil {
-		return "", err
-	}
-	path := filepath.Join(dir, "scrolling_"+timestamp()+".png")
-	f, err := os.Create(path)
-	if err != nil {
-		return "", err
+		return "", fmt.Errorf("getting output dir: %w", err)
 	}
 	defer f.Close()
 	if err := png.Encode(f, img); err != nil {
-		return "", err
+		debug.Logf("main", "png.Encode failed for %s: %v", path, err)
+		return "", fmt.Errorf("encoding png: %w", err)
 	}
 	return path, nil
 }

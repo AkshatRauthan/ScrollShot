@@ -2,6 +2,7 @@ package autoscroll
 
 import (
 	"errors"
+	"fmt"
 	"image"
 	"time"
 
@@ -91,10 +92,10 @@ func New(
 func (c *Controller) captureFrame() (*image.RGBA, error) {
 	img, err := c.Capturer.CaptureActiveWindow()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("capturing active window: %w", err)
 	}
 	if _, _, err := c.Session.SaveFrame(img); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("saving frame: %w", err)
 	}
 	c.framesCaptured++
 	rgba := stitch.ToRGBA(img)

@@ -5,6 +5,7 @@ package autoscroll
 
 import (
 	"errors"
+	"fmt"
 
 	"scrollshot/internal/autoscroll/backend"
 )
@@ -22,7 +23,7 @@ var (
 func DetectScroller() (backend.Scroller, error) {
 	scroller, err := backend.Detect()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("detecting backend: %w", err)
 	}
 
 	if scroller == nil {

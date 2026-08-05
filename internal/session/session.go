@@ -35,7 +35,7 @@ type Session struct {
 func New() (*Session, error) {
 	dir, err := paths.SessionDir()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getting session dir: %w", err)
 	}
 	return &Session{dir: dir}, nil
 }
@@ -49,7 +49,7 @@ func (s *Session) Dir() string {
 func (s *Session) Frames() ([]string, error) {
 	paths, err := filepath.Glob(filepath.Join(s.dir, "frame_*.png"))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("globbing frame files: %w", err)
 	}
 	sort.Strings(paths)
 	return paths, nil
@@ -68,7 +68,7 @@ func (s *Session) EnsureFresh() (clearedStale bool, err error) {
 
 	frames, err := s.Frames()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("listing frames: %w", err)
 	}
 	if len(frames) == 0 {
 		return false, nil
@@ -83,7 +83,7 @@ func (s *Session) EnsureFresh() (clearedStale bool, err error) {
 	if elapsed > StaleGap {
 		debug.Logf("session", "session stale (last modification %v ago) — clearing old frames", elapsed.Round(time.Second))
 		if err := s.Clear(); err != nil {
-			return false, err
+			return false, fmt.Errorf("clearing stale session: %w", err)
 		}
 		return true, nil
 	}
@@ -96,7 +96,7 @@ func (s *Session) EnsureFresh() (clearedStale bool, err error) {
 func (s *Session) SaveFrame(img image.Image) (index int, path string, err error) {
 	frames, err := s.Frames()
 	if err != nil {
-		return 0, "", err
+		return 0, "", fmt.Errorf("listing existing frames: %w", err)
 	}
 	idx := len(frames)
 	debug.Logf("session", "saving frame #%d", idx)
@@ -121,7 +121,7 @@ func (s *Session) Clear() error {
 	debug.Logf("session", "clearing session directory %s", s.dir)
 	frames, err := s.Frames()
 	if err != nil {
-		return err
+		return fmt.Errorf("listing frames to clear: %w", err)
 	}
 	for _, f := range frames {
 		os.Remove(f)
