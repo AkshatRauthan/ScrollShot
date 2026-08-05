@@ -5,26 +5,31 @@
 //   - capture:    pluggable screenshot backends, one per OS/compositor
 //   - session:    where captured frames are staged between commands
 //   - stitch:     pure image logic that glues frames together
+//   - autoscroll: automatic scrolling + end-of-page detection (Linux & Windows)
 //   - edit:       [planned] crop/reorder frames before stitching
 //   - export:     [planned] lossless/lossy output size control
-//   - autoscroll: [planned] drive scrolling + detect end-of-page
 //
 // Usage:
 //
-//	scrollshot capture   capture current window state, add to session
-//	scrollshot finish    stitch all captures, save final image, clear session
+//	scrollshot capture [-wait N]   capture current window (waits N sec first, default 5)
+//	scrollshot finish              stitch all captures, save final image, clear session
+//	scrollshot auto    [-wait N]   automatic scroll-capture-stitch (waits N sec first, default 5)
+//	scrollshot version             print version
 package main
 
 import (
+	"flag"
 	"fmt"
 	"image"
 	"image/png"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"time"
 
 	"scrollshot/internal/autoscroll"
 	"scrollshot/internal/capture"
+	"scrollshot/internal/notify"
+	"scrollshot/internal/paths"
 	"scrollshot/internal/session"
 	"scrollshot/internal/stitch"
 )
@@ -42,7 +47,21 @@ func die(format string, a ...interface{}) {
 	os.Exit(1)
 }
 
-func cmdCapture() {
+// defaultWait is the number of seconds scrollshot waits before executing
+// a capture or auto command, giving the user time to switch focus to the
+// target window.
+const defaultWait = 5
+
+// parseWait parses a -wait flag from args and returns the delay duration.
+// Unknown flags cause the program to exit with usage information.
+func parseWait(subcommand string, args []string) time.Duration {
+	fs := flag.NewFlagSet(subcommand, flag.ExitOnError)
+	wait := fs.Int("wait", defaultWait, "seconds to wait before executing")
+	fs.Parse(args) //nolint:errcheck // ExitOnError means Parse never returns a non-nil error
+	return time.Duration(*wait) * time.Second
+}
+
+func cmdCapture(wait time.Duration) {
 	var backend capture.Capturer
 	if forced := os.Getenv("SCROLLSHOT_BACKEND"); forced != "" {
 		backend = capture.Get(forced)
@@ -150,27 +169,15 @@ func cmdFinish() {
 	}
 
 	fmt.Println("Saved:", outPath)
-	notify(outPath)
-}
-
-func outputDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	dir := home + "/Pictures/Screenshots"
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", err
-	}
-	return dir, nil
+	sendNotification(outPath)
 }
 
 func saveOutput(img image.Image) (string, error) {
-	dir, err := outputDir()
+	dir, err := paths.OutputDir()
 	if err != nil {
 		return "", err
 	}
-	path := fmt.Sprintf("%s/scrolling_%s.png", dir, timestamp())
+	path := filepath.Join(dir, "scrolling_"+timestamp()+".png")
 	f, err := os.Create(path)
 	if err != nil {
 		return "", err
@@ -182,8 +189,25 @@ func saveOutput(img image.Image) (string, error) {
 	return path, nil
 }
 
-func cmdAuto() {
-	backend := capture.Detect()
+func cmdAuto(wait time.Duration) {
+	if wait > 0 {
+		fmt.Printf("Waiting %v before auto scroll...\n", wait)
+		time.Sleep(wait)
+	}
+
+	// Honour SCROLLSHOT_BACKEND for consistency with cmdCapture.
+	var backend capture.Capturer
+	if forced := os.Getenv("SCROLLSHOT_BACKEND"); forced != "" {
+		backend = capture.Get(forced)
+		if backend == nil {
+			die("unknown backend %q (available: %v)", forced, capture.List())
+		}
+		if !backend.Available() {
+			die("backend %q is not available in this environment", forced)
+		}
+	} else {
+		backend = capture.Detect()
+	}
 	if backend == nil {
 		die("no capture backend available for this environment (tried: %v)", capture.List())
 	}
@@ -192,7 +216,7 @@ func cmdAuto() {
 	if err != nil {
 		die("%v", err)
 	}
-	defer scroller.Close() // release the uinput virtual device on exit
+	defer scroller.Close()
 
 	sess, err := session.New()
 	if err != nil {
@@ -230,26 +254,26 @@ func cmdAuto() {
 
 	// Automatically stitch and export the captured session.
 	cmdFinish()
-
 }
 
-func notify(path string) {
-	defer func() { recover() }()
-	exec.Command("notify-send", "Scrolling screenshot saved", path).Run()
+func sendNotification(path string) {
+	notify.Send("Scrolling screenshot saved", path)
 }
 
 func main() {
-	if len(os.Args) != 2 {
+	if len(os.Args) < 2 {
 		fmt.Println("Usage: scrollshot [capture|finish|auto|version]")
 		os.Exit(1)
 	}
 	switch os.Args[1] {
 	case "capture":
-		cmdCapture()
+		wait := parseWait("capture", os.Args[2:])
+		cmdCapture(wait)
 	case "finish":
 		cmdFinish()
 	case "auto":
-		cmdAuto()
+		wait := parseWait("auto", os.Args[2:])
+		cmdAuto(wait)
 	case "version", "--version", "-v":
 		fmt.Println("scrollshot", version)
 	default:
