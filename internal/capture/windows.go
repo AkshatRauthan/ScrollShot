@@ -131,7 +131,11 @@ func (w *windowsScreenshot) CaptureActiveWindow() (image.Image, error) {
 	}
 	defer procDeleteObject.Call(hBitmap)
 
-	procSelectObject.Call(hdcMem, hBitmap)
+	// Select hBitmap into hdcMem; save the default bitmap so we can
+	// restore it before GetDIBits.
+	// CRITICAL: GetDIBits fails silently (returns 0, ERROR_SUCCESS) if
+	// the target bitmap is still selected into any DC when called.
+	oldBmp, _, _ := procSelectObject.Call(hdcMem, hBitmap)
 
 	// PW_RENDERFULLCONTENT: correctly captures DWM-composited windows
 	// (browsers, Electron apps) that a plain BitBlt would return blank.
@@ -139,6 +143,10 @@ func (w *windowsScreenshot) CaptureActiveWindow() (image.Image, error) {
 	if printed == 0 {
 		return nil, fmt.Errorf("PrintWindow failed — window may not support rendering to a device context")
 	}
+
+	// Restore the original bitmap, deselecting hBitmap from hdcMem.
+	// GetDIBits requires the bitmap NOT be selected into any DC.
+	procSelectObject.Call(hdcMem, oldBmp)
 
 	bi := bitmapInfo{
 		header: bitmapInfoHeader{
@@ -152,8 +160,10 @@ func (w *windowsScreenshot) CaptureActiveWindow() (image.Image, error) {
 	bi.header.size = uint32(unsafe.Sizeof(bi.header))
 
 	buf := make([]byte, width*height*4)
+	// Pass hdcScreen (not hdcMem): GetDIBits uses it only for
+	// colour-format information — not as the source of bitmap data.
 	ret, _, err = procGetDIBits.Call(
-		hdcMem, hBitmap, 0, uintptr(height),
+		hdcScreen, hBitmap, 0, uintptr(height),
 		uintptr(unsafe.Pointer(&buf[0])),
 		uintptr(unsafe.Pointer(&bi)),
 		uintptr(dibRGBColors),
@@ -162,6 +172,7 @@ func (w *windowsScreenshot) CaptureActiveWindow() (image.Image, error) {
 		return nil, fmt.Errorf("GetDIBits failed: %w", err)
 	}
 
+	debug.Logf("capture/win", "GetDIBits copied %d scan lines", ret)
 	return bgraBufToRGBA(buf, width, height), nil
 }
 
