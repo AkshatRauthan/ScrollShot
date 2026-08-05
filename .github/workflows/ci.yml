@@ -122,11 +122,25 @@ jobs:
       - name: Verify a frame was actually written
         shell: pwsh
         run: |
-          $frames = Get-ChildItem "$env:USERPROFILE\.cache\scrollshot_session\frame_*.png" -ErrorAction SilentlyContinue
+          $frames = Get-ChildItem "$env:LOCALAPPDATA\scrollshot_session\frame_*.png" -ErrorAction SilentlyContinue
           if (-not $frames) {
             throw "capture reported success but no frame file was found on disk"
           }
           Write-Host "Captured frame(s): $($frames.Name -join ', ')"
+
+      - name: Test 'finish' command (stitch and save)
+        shell: pwsh
+        run: |
+          .\scrollshot.exe finish
+          if ($LASTEXITCODE -ne 0) {
+            throw "scrollshot finish failed with exit code $LASTEXITCODE"
+          }
+
+          $outputs = Get-ChildItem "$env:USERPROFILE\Pictures\Screenshots\scrolling_*.png", "$env:USERPROFILE\Pictures\scrolling_*.png", "$env:USERPROFILE\scrollshot_output\scrolling_*.png" -ErrorAction SilentlyContinue
+          if (-not $outputs) {
+            throw "finish reported success but no stitched file was found in any fallback directory"
+          }
+          Write-Host "Saved final output: $($outputs[0].FullName)"
 
       - name: Clean up Notepad
         if: always()
@@ -172,4 +186,13 @@ jobs:
           xterm -geometry 80x24+0+0 &
           sleep 2
           /tmp/scrollshot capture
-          echo "capture succeeded — X11 backend produced output"
+          echo "capture succeeded"
+          
+          /tmp/scrollshot finish
+          echo "finish succeeded"
+          
+          if ! ls $HOME/Pictures/Screenshots/scrolling_*.png 1> /dev/null 2>&1; then
+             echo "Error: Output file not found in $HOME/Pictures/Screenshots"
+             exit 1
+          fi
+          echo "Output successfully verified"
