@@ -46,7 +46,7 @@ func TestIsValidHome(t *testing.T) {
 		{filepath.Join("C:", "Users") + string(filepath.Separator), false},
 		{filepath.Join("C:", "Users", "Akshat"), true},
 		{filepath.Join("/", "home", "akshat"), true},
-		{"/", false}, // rejected because base is root separator
+		{"/", false},    // rejected because base is root separator
 		{"C:\\", false}, // rejected because base is root separator
 	}
 
