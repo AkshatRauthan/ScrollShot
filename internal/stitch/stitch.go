@@ -615,13 +615,27 @@ func Stitch(frames []*image.RGBA) (*image.RGBA, []FrameResult, StaticEdges, erro
 
 	results := make([]FrameResult, 0, len(trimmed))
 	current := trimmed[0]
+	// prevFrame is the most-recently-captured trimmed frame — used as the
+	// reference 'top' for FindOverlap rather than the growing stitched
+	// canvas. Passing the canvas caused dominantColor to sample rows far
+	// above the relevant reference strip and capped maxOffset against the
+	// canvas height instead of the frame height, degrading match quality.
+	prevFrame := trimmed[0]
 	results = append(results, FrameResult{Index: 0, AddedPx: current.Bounds().Dy(), MatchScore: 1})
 
 	for i := 1; i < len(trimmed); i++ {
 		next := trimmed[i]
 
-		match := FindOverlap(current, next)
-		newRows := match.AddedPx
+		// Pass the previous *frame* (not the growing canvas) as the
+		// reference so dominantColor, maxOffset, and strip sampling all
+		// operate on a fixed-height image of the same size as next.
+		match := FindOverlap(prevFrame, next)
+
+		// When no confident match is found (OverlapPx==0), fall back to
+		// appending the entire next frame — this preserves v0.2.0 behaviour
+		// where a rejection meant "no rows to skip" rather than "add nothing".
+		overlap := match.OverlapPx
+		newRows := next.Bounds().Dy() - overlap
 
 		combined := image.NewRGBA(image.Rect(0, 0, expectedWidth, current.Bounds().Dy()+newRows))
 		for y := 0; y < current.Bounds().Dy(); y++ {
@@ -631,17 +645,18 @@ func Stitch(frames []*image.RGBA) (*image.RGBA, []FrameResult, StaticEdges, erro
 		}
 		for y := range newRows {
 			for x := range expectedWidth {
-				combined.Set(x, current.Bounds().Dy()+y, next.At(x, match.OverlapPx+y))
+				combined.Set(x, current.Bounds().Dy()+y, next.At(x, overlap+y))
 			}
 		}
 		current = combined
+		prevFrame = next
 
 		results = append(results, FrameResult{
 			Index:        i,
-			OverlapPx:    match.OverlapPx,
-			AddedPx:      match.AddedPx,
+			OverlapPx:    overlap,
+			AddedPx:      newRows,
 			MatchScore:   match.MatchScore,
-			LowConfident: match.OverlapPx == 0,
+			LowConfident: overlap == 0,
 		})
 	}
 

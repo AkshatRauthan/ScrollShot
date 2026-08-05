@@ -23,6 +23,7 @@ import (
 	"os/exec"
 	"time"
 
+	"scrollshot/internal/autoscroll"
 	"scrollshot/internal/capture"
 	"scrollshot/internal/session"
 	"scrollshot/internal/stitch"
@@ -181,6 +182,57 @@ func saveOutput(img image.Image) (string, error) {
 	return path, nil
 }
 
+func cmdAuto() {
+	backend := capture.Detect()
+	if backend == nil {
+		die("no capture backend available for this environment (tried: %v)", capture.List())
+	}
+
+	scroller, err := autoscroll.DetectScroller()
+	if err != nil {
+		die("%v", err)
+	}
+	defer scroller.Close() // release the uinput virtual device on exit
+
+	sess, err := session.New()
+	if err != nil {
+		die("could not initialize session: %v", err)
+	}
+
+	clearedStale, err := sess.EnsureFresh()
+	if err != nil {
+		die("could not prepare session: %v", err)
+	}
+	if clearedStale {
+		fmt.Println("Previous session went stale — started a new one")
+	}
+
+	controller, err := autoscroll.New(
+		backend,
+		scroller,
+		sess,
+		autoscroll.DefaultConfig(),
+	)
+	if err != nil {
+		die("could not initialize autoscroll: %v", err)
+	}
+
+	result, err := controller.Run()
+	if err != nil {
+		die("autoscroll failed: %v", err)
+	}
+
+	fmt.Printf(
+		"Stoppage triggered due to (%s)\nCaptured %d frames\n",
+		result.StopReason,
+		result.FramesCaptured,
+	)
+
+	// Automatically stitch and export the captured session.
+	cmdFinish()
+
+}
+
 func notify(path string) {
 	defer func() { recover() }()
 	exec.Command("notify-send", "Scrolling screenshot saved", path).Run()
@@ -188,7 +240,7 @@ func notify(path string) {
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Println("Usage: scrollshot [capture|finish|version]")
+		fmt.Println("Usage: scrollshot [capture|finish|auto|version]")
 		os.Exit(1)
 	}
 	switch os.Args[1] {
@@ -196,10 +248,12 @@ func main() {
 		cmdCapture()
 	case "finish":
 		cmdFinish()
+	case "auto":
+		cmdAuto()
 	case "version", "--version", "-v":
 		fmt.Println("scrollshot", version)
 	default:
-		fmt.Println("Usage: scrollshot [capture|finish|version]")
+		fmt.Println("Usage: scrollshot [capture|finish|auto|version]")
 		os.Exit(1)
 	}
 }
