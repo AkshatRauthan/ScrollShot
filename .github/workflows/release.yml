@@ -242,3 +242,43 @@ jobs:
             artifacts/*
           draft: false
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
+
+      - name: Checkout main (for Scoop manifest commit)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main-branch
+
+      - name: Update Scoop manifest
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          AMD64_HASH=$(grep 'scrollshot-windows-amd64.zip' artifacts/SHA256SUMS.txt | awk '{print $1}')
+          ARM64_HASH=$(grep 'scrollshot-windows-arm64.zip' artifacts/SHA256SUMS.txt | awk '{print $1}')
+          REPO_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
+
+          jq \
+            --arg version "$VERSION" \
+            --arg amd64_url "$REPO_URL/scrollshot-windows-amd64.zip" \
+            --arg amd64_hash "$AMD64_HASH" \
+            --arg arm64_url "$REPO_URL/scrollshot-windows-arm64.zip" \
+            --arg arm64_hash "$ARM64_HASH" \
+            '.version = $version
+             | .architecture."64bit".url = $amd64_url
+             | .architecture."64bit".hash = $amd64_hash
+             | .architecture."arm64".url = $arm64_url
+             | .architecture."arm64".hash = $arm64_hash' \
+            main-branch/bucket/scrollshot.json > main-branch/bucket/scrollshot.json.tmp
+          mv main-branch/bucket/scrollshot.json.tmp main-branch/bucket/scrollshot.json
+
+      - name: Commit updated Scoop manifest
+        run: |
+          cd main-branch
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bucket/scrollshot.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: bump Scoop manifest to ${{ github.ref_name }} [skip ci]"
+            git push origin HEAD:main
+          fi

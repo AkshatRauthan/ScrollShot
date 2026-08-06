@@ -1,0 +1,39 @@
+{
+    "version": "0.3.0",
+    "description": "Native scrolling screenshots — captures long, scrollable content as a single continuous image.",
+    "homepage": "https://github.com/AkshatRauthan/ScrollShot",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/AkshatRauthan/ScrollShot/releases/download/v0.3.0/scrollshot-windows-amd64.zip",
+            "hash": "5a89210658a6fca2848c48e3935c2a71d8e0c1d1c683774e480497e03cdef055",
+            "bin": "scrollshot.exe"
+        },
+        "arm64": {
+            "url": "https://github.com/AkshatRauthan/ScrollShot/releases/download/v0.3.0/scrollshot-windows-arm64.zip",
+            "hash": "e5ad8b598f993374040cef3a5e185514c19d3e0570f3300b5cad4e7cb9fb33f2",
+            "bin": "scrollshot.exe"
+        }
+    },
+    "checkver": {
+        "github": "https://github.com/AkshatRauthan/ScrollShot"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/AkshatRauthan/ScrollShot/releases/download/v$version/scrollshot-windows-amd64.zip",
+                "hash": {
+                    "url": "$baseurl/SHA256SUMS.txt",
+                    "regex": "([a-fA-F0-9]{64})\\s+scrollshot-windows-amd64\\.zip"
+                }
+            },
+            "arm64": {
+                "url": "https://github.com/AkshatRauthan/ScrollShot/releases/download/v$version/scrollshot-windows-arm64.zip",
+                "hash": {
+                    "url": "$baseurl/SHA256SUMS.txt",
+                    "regex": "([a-fA-F0-9]{64})\\s+scrollshot-windows-arm64\\.zip"
+                }
+            }
+        }
+    }
+}
