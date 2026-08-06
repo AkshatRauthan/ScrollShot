@@ -95,6 +95,32 @@ jobs:
             README.md \
             LICENSE
 
+      - name: Install nfpm
+        if: matrix.goos == 'linux'
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+      - name: Build .deb and .rpm packages
+        if: matrix.goos == 'linux'
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          # Debian/RPM versions conventionally drop the leading "v" from the tag.
+          VERSION: ${{ github.ref_name }}
+        run: |
+          VERSION="${VERSION#v}"
+          nfpm package --config nfpm.yaml --packager deb \
+            --target scrollshot-${{ matrix.goarch }}.deb
+          nfpm package --config nfpm.yaml --packager rpm \
+            --target scrollshot-${{ matrix.goarch }}.rpm
+
+      - name: Upload .deb/.rpm artifacts
+        if: matrix.goos == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrollshot-${{ matrix.goarch }}-packages
+          path: |
+            scrollshot-${{ matrix.goarch }}.deb
+            scrollshot-${{ matrix.goarch }}.rpm
+
       - name: Package (zip)
         if: matrix.archive == 'zip'
         run: |
@@ -157,7 +183,9 @@ jobs:
 
           | File | Platform | Architecture |
           |---|---|---|
-          | `scrollshot-linux-amd64.tar.gz` | Linux | x64 |
+          | `scrollshot-linux-amd64.tar.gz` | Linux (any distro) | x64 |
+          | `scrollshot-amd64.deb` | Debian, Ubuntu, Mint, Pop!_OS, etc. | x64 |
+          | `scrollshot-amd64.rpm` | Fedora, openSUSE, RHEL, etc. | x64 |
           | `scrollshot-windows-amd64.zip` | Windows | x64 |
           | `scrollshot-windows-arm64.zip` | Windows | ARM64 |
 
@@ -165,7 +193,17 @@ jobs:
 
           ## 🚀 Installation
 
-          **Linux:**
+          **Linux (Debian/Ubuntu-based):**
+          ```bash
+          sudo dpkg -i scrollshot-amd64.deb
+          ```
+
+          **Linux (Fedora/openSUSE-based):**
+          ```bash
+          sudo rpm -i scrollshot-amd64.rpm
+          ```
+
+          **Linux (any distro, no package manager):**
           ```bash
           tar -xzf scrollshot-linux-amd64.tar.gz
           chmod +x scrollshot

@@ -45,7 +45,7 @@ scrollshot finish    # stitch and save
 
 Output is saved to `~/Pictures/Screenshots/` (or the first writable fallback).
 
-For the full command reference, flags, troubleshooting, and platform setup see **[`docs/usage.md`](docs/usage.md)**.
+See **[`docs/installation.md`](docs/installation.md)** to get set up, and **[`docs/usage.md`](docs/usage.md)** for the full command reference, flags, troubleshooting, and workflows.
 
 ---
 

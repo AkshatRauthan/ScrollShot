@@ -1,0 +1,36 @@
+name: "scrollshot"
+# GOARCH is set by the release workflow (e.g. "amd64"). nfpm maps it to the
+# right value per format automatically — amd64 -> amd64 (deb), x86_64 (rpm).
+arch: "${GOARCH}"
+platform: "linux"
+# VERSION is set by the release workflow, stripped of the leading "v"
+# (Debian/RPM versions conventionally don't include it).
+version: "${VERSION}"
+section: "utils"
+priority: "optional"
+
+# TODO: replace with a real contact — required by both .deb and .rpm.
+maintainer: "Akshat Rauthan dev.akshat.mailer@gmail.com"
+
+description: |
+  Native scrolling screenshots for Linux and Windows.
+  Captures long, scrollable content — web pages, design canvases, code
+  editors, chat logs, docs — as a single continuous image.
+
+vendor: "Akshat Rauthan"
+homepage: "https://github.com/AkshatRauthan/ScrollShot"
+license: "MIT"
+
+contents:
+  # The linux/amd64 binary, already built by the release workflow before
+  # this runs.
+  - src: ./dist/scrollshot
+    dst: /usr/bin/scrollshot
+    file_info:
+      mode: 0755
+
+  - src: ./README.md
+    dst: /usr/share/doc/scrollshot/README.md
+
+  - src: ./LICENSE
+    dst: /usr/share/doc/scrollshot/LICENSE

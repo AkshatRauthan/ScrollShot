@@ -4,107 +4,9 @@ A practical walkthrough of every command and flag — what to run, when, and why
 
 ---
 
-## Installation
+## Before you start
 
-### Pre-built binary
-
-Download the latest release binary from the [Releases page](https://github.com/AkshatRauthan/ScrollShot/releases) and place it somewhere on your `PATH`.
-
-### Build from source
-
-Requires **Go 1.21+**.
-
-```bash
-git clone https://github.com/AkshatRauthan/ScrollShot.git
-cd ScrollShot
-
-# Linux / macOS
-go build -o scrollshot ./cmd/scrollshot
-
-# Windows (cross-compile from Linux)
-GOOS=windows GOARCH=amd64 go build -o scrollshot.exe ./cmd/scrollshot/
-```
-
-### Adding to PATH (run `scrollshot` from any terminal)
-
-#### Linux / macOS
-
-**Option A — copy to `/usr/local/bin` (system-wide):**
-
-```bash
-sudo cp scrollshot /usr/local/bin/
-# Verify:
-scrollshot --help
-```
-
-**Option B — copy to `~/.local/bin` (current user only, no sudo):**
-
-```bash
-mkdir -p ~/.local/bin
-cp scrollshot ~/.local/bin/
-
-# Make sure ~/.local/bin is on your PATH (add to ~/.bashrc or ~/.zshrc if missing):
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-
-# Verify:
-scrollshot --help
-```
-
-#### Windows
-
-**Option A — move the binary to a permanent folder, then add it to PATH via GUI:**
-
-1. Move `scrollshot.exe` to a stable folder, e.g. `C:\Tools\scrollshot\scrollshot.exe`.
-2. Open **Start** → search `Environment Variables` → click **Edit the system environment variables**.
-3. Under **System variables**, select **Path** → click **Edit** → click **New**.
-4. Paste `C:\Tools\scrollshot` and click **OK** on all dialogs.
-5. Open a new `cmd` or PowerShell window and verify:
-
-```cmd
-scrollshot --help
-```
-
-**Option B — one-liner via PowerShell (adds to your User PATH permanently):**
-
-```powershell
-# Run once in PowerShell (no admin required for user-level PATH)
-$target = "$env:USERPROFILE\bin"
-New-Item -ItemType Directory -Force -Path $target | Out-Null
-Copy-Item .\scrollshot.exe $target
-
-$current = [Environment]::GetEnvironmentVariable("PATH", "User")
-if ($current -notlike "*$target*") {
-    [Environment]::SetEnvironmentVariable("PATH", "$current;$target", "User")
-    Write-Host "Added $target to PATH. Open a new terminal to use scrollshot."
-}
-```
-
-
-
-### Linux: `/dev/uinput` permissions (required for `auto`)
-
-The `auto` command injects scroll events through the Linux kernel's `uinput` module. That requires read/write access to `/dev/uinput`.
-
-**One-time setup (recommended):**
-
-```bash
-# Add yourself to the input group
-sudo usermod -aG input $USER
-
-# Create a udev rule granting the input group access
-echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' | sudo tee /etc/udev/rules.d/99-scrollshot.rules
-sudo udevadm control --reload-rules && sudo udevadm trigger
-
-# Log out and back in, then verify
-ls -la /dev/uinput   # should show: crw-rw---- ... input input /dev/uinput
-```
-
-**Quick alternative (no permanent setup):**
-
-```bash
-sudo scrollshot auto
-```
+New here? Installation (pre-built binary, `.deb`/`.rpm`, build from source, adding to `PATH`, and Linux `/dev/uinput` permissions) now lives in **[`docs/installation.md`](installation.md)**. This guide assumes `scrollshot` is already installed and on your `PATH`.
 
 ---
 
@@ -295,7 +197,7 @@ Session frames are automatically cleared after a successful `finish` or `auto`. 
 
 ### `auto` fails with "no supported scrolling backend"
 
-**Linux:** You don't have access to `/dev/uinput`. See [Linux uinput permissions](#linux-devinput-permissions-required-for-auto) above.
+**Linux:** You don't have access to `/dev/uinput`. See [Linux uinput permissions](installation.md#linux-devinput-permissions-required-for-auto) in the installation guide.
 
 **Other platform:** `auto` is not yet supported on macOS.
 
