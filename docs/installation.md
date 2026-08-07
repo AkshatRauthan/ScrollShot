@@ -24,6 +24,25 @@ This installs the `scrollshot` binary to `/usr/bin`, so it's on your `PATH` imme
 
 > These aren't yet available through `apt`/`dnf` directly (that needs a hosted repository, which isn't set up yet) — for now, download and install the file per-release.
 
+## Package manager (Windows)
+
+**Scoop:**
+
+```powershell
+scoop bucket add scrollshot https://github.com/AkshatRauthan/ScrollShot
+scoop install scrollshot
+```
+
+This is live as soon as `bucket/scrollshot.json` is on `main` — no review needed. The release workflow keeps the version/hashes in it current automatically on every tagged release.
+
+**winget:**
+
+```powershell
+winget install AkshatRauthan.Scrollshot
+```
+
+> Not live yet — the manifest is prepared but pending submission and review in the official `winget-pkgs` repo.
+
 ## Build from source
 
 Requires **Go 1.21+**.
@@ -112,6 +131,12 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 # Log out and back in, then verify
 ls -la /dev/uinput   # should show: crw-rw---- ... input input /dev/uinput
+```
+
+**Quick alternative (no permanent setup):**
+
+```bash
+sudo scrollshot auto
 ```
 
 ---

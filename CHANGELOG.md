@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.0 — Package distribution: apt, Scoop, and winget
+
+### Added
+- Self-hosted apt repository (`apt/conf/distributions`) built with `reprepro`, GPG-signed, and published to GitHub Pages on every tagged release.
+- `.deb` and `.rpm` packaging via `nfpm` (`nfpm.yaml`), built for `linux/amd64` alongside the existing binary release.
+- Scoop bucket manifest (`bucket/scrollshot.json`) for Windows, hosted directly in this repo with `autoupdate` wired to `SHA256SUMS.txt`.
+- winget manifest set (`winget/`) prepared for submission to the official `winget-pkgs` repository.
+
+### Changed
+- Release workflow (`release.yml`) now rebuilds and republishes the apt repository and commits the updated Scoop manifest automatically after each tagged release.
+- Installation instructions split out of `docs/usage.md` into a dedicated `docs/installation.md`, covering all install methods (binary, package managers, build from source, PATH setup, and Linux `uinput` permissions).
+
+### Notes
+- winget listing is pending review/merge in `microsoft/winget-pkgs` — not installable via `winget install` until merged.
+- apt and Scoop are both self-hosted; no third-party review required for either.
+
+---
+
 ## v0.3.0 — Autoscroll, debug logging, and Windows stability
 
 ### Added

@@ -106,8 +106,6 @@ See [`docs/architecture.md`](docs/architecture.md) for the reasoning behind this
 - **Frame cropping & reordering** — manual controls on top of the automatic fixed-UI detection already in place
 - **Lossless & lossy export control** — tighter compression or scaled-down output when file size matters more than pixel-perfect fidelity
 
-✅ **Autoscroll** (`scrollshot auto`) shipped in v0.3.0 — Windows and Linux, fully automatic.
-
 ## Known limitations
 
 A few edge cases don't have clean answers yet — see [`docs/known-limitations.md`](docs/known-limitations.md) for the honest list rather than pretending they don't exist.
