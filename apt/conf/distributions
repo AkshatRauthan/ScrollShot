@@ -1,0 +1,7 @@
+Origin: Scrollshot
+Label: Scrollshot
+Codename: stable
+Architectures: amd64 arm64
+Components: main
+Description: Apt repository for Scrollshot
+SignWith: EAA4EDDB832489B1F5BAD35DA7033B9799B8E39A
